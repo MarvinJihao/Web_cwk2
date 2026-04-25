@@ -1,0 +1,2 @@
+"""Search engine coursework package."""
+
