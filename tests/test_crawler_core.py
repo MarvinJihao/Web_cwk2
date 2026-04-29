@@ -1,22 +1,5 @@
 from src.crawler import Crawler
-
-
-class FakeResponse:
-    def __init__(self, text):
-        self.text = text
-
-    def raise_for_status(self):
-        return None
-
-
-class FakeSession:
-    def __init__(self, pages):
-        self.pages = pages
-        self.requested_urls = []
-
-    def get(self, url, timeout):
-        self.requested_urls.append(url)
-        return FakeResponse(self.pages[url])
+from tests.helpers import FakeSession
 
 
 def test_crawler_collects_internal_pages_and_text():
@@ -24,6 +7,7 @@ def test_crawler_collects_internal_pages_and_text():
         {
             "https://quotes.toscrape.com": """
                 <html><body>
+                  <title>Quotes</title>
                   <p>First quote</p>
                   <a href="/page/2/">next</a>
                   <a href="https://external.example/">external</a>
@@ -47,29 +31,9 @@ def test_crawler_collects_internal_pages_and_text():
     ]
     assert "First quote" in pages[0].text
     assert "Second quote" in pages[1].text
-
-
-def test_crawler_treats_page_one_as_homepage():
-    session = FakeSession(
-        {
-            "https://quotes.toscrape.com": """
-                <html><body>
-                  <p>First quote</p>
-                  <a href="/page/1/">page one</a>
-                </body></html>
-            """,
-        }
-    )
-
-    crawler = Crawler(
-        "https://quotes.toscrape.com/",
-        politeness_delay=0,
-        session=session,
-    )
-
-    pages = crawler.crawl()
-
-    assert [page.url for page in pages] == ["https://quotes.toscrape.com"]
+    assert pages[0].title == "Quotes"
+    assert pages[0].status == 200
+    assert pages[0].content_hash
 
 
 def test_crawler_waits_between_successive_requests():

@@ -60,7 +60,7 @@ class SearchShell:
         args = parts[1:]
 
         if command == "build":
-            return self._build()
+            return self._build(args)
         if command == "load":
             return self._load()
         if command == "print":
@@ -71,19 +71,27 @@ class SearchShell:
             return "Commands: build, load, print <word>, find <query>, exit"
         return f"Unknown command: {command}"
 
-    def _build(self) -> str:
+    def _build(self, args: list[str] | None = None) -> str:
+        max_pages = self._parse_max_pages(args or [])
         crawler = Crawler(
             self.start_url,
             politeness_delay=self.politeness_delay,
             url_filter=self._should_crawl_url,
         )
         print("Building index. This waits 6 seconds between page requests...", flush=True)
-        pages = crawler.crawl(on_page_crawled=self._print_crawl_progress)
+        pages = crawler.crawl(
+            max_pages=max_pages,
+            on_page_crawled=self._print_crawl_progress,
+            on_page_failed=self._print_crawl_failure,
+        )
         index = InvertedIndex()
         index.build(pages)
         save_index(index, self.index_path)
         self.index = index
-        return f"Built index for {len(pages)} pages and saved it to {self.index_path}"
+        return (
+            f"Built index for {len(pages)} pages with {len(crawler.failures)} failed requests "
+            f"and saved it to {self.index_path}"
+        )
 
     def _load(self) -> str:
         self.index = load_index(self.index_path)
@@ -100,12 +108,29 @@ class SearchShell:
 
     def _find(self, args: list[str]) -> str:
         if not args:
-            return "Usage: find <query>"
+            return "Usage: find [all|any] <query>"
         engine = self._engine()
-        results = engine.find(" ".join(args))
+        mode = "all"
+        query_parts = args
+        if args[0].lower() in {"all", "any"}:
+            mode = args[0].lower()
+            query_parts = args[1:]
+        if not query_parts:
+            return "Usage: find [all|any] <query>"
+
+        phrase = any(" " in part for part in query_parts)
+        query = " ".join(query_parts)
+        results = engine.find(query, mode=mode, phrase=phrase)
         if not results:
-            return "No pages found."
-        return "\n".join(f"{result.url} (score: {result.score})" for result in results)
+            suggestions = engine.suggest(query)
+            if not suggestions:
+                return "No pages found."
+            suggestion_lines = [
+                f"Did you mean {', '.join(matches)} for '{term}'?"
+                for term, matches in suggestions.items()
+            ]
+            return "No pages found.\n" + "\n".join(suggestion_lines)
+        return "\n".join(self._format_result(result) for result in results)
 
     def _engine(self) -> SearchEngine:
         if self.index is None:
@@ -120,6 +145,30 @@ class SearchShell:
     @staticmethod
     def _print_crawl_progress(page_count: int, url: str) -> None:
         print(f"Crawled {page_count}: {url}", flush=True)
+
+    @staticmethod
+    def _print_crawl_failure(failure_count: int, url: str, error: str) -> None:
+        print(f"Warning {failure_count}: skipped {url} ({error})", flush=True)
+
+    @staticmethod
+    def _parse_max_pages(args: list[str]) -> int | None:
+        if not args:
+            return None
+        if len(args) == 2 and args[0] == "--max-pages":
+            max_pages = int(args[1])
+            if max_pages < 1:
+                raise ValueError("--max-pages must be at least 1")
+            return max_pages
+        raise ValueError("Usage: build [--max-pages N]")
+
+    @staticmethod
+    def _format_result(result: object) -> str:
+        url = getattr(result, "url")
+        score = getattr(result, "score")
+        title = getattr(result, "title", "")
+        if title:
+            return f"{url} - {title} (score: {score:.4f})"
+        return f"{url} (score: {score:.4f})"
 
 
 def main() -> None:
