@@ -57,15 +57,22 @@ class Crawler:
         session: object | None = None,
         sleeper: Callable[[float], None] = sleep,
         timeout: float = 10.0,
+        url_filter: Callable[[str], bool] | None = None,
     ) -> None:
         self.start_url = self._normalise_url(start_url)
         self.politeness_delay = politeness_delay
         self.session = session or self._default_session()
         self.sleeper = sleeper
         self.timeout = timeout
+        self.url_filter = url_filter
         self._start_netloc = urlparse(self.start_url).netloc
 
-    def crawl(self, *, max_pages: int | None = None) -> list[Page]:
+    def crawl(
+        self,
+        *,
+        max_pages: int | None = None,
+        on_page_crawled: Callable[[int, str], None] | None = None,
+    ) -> list[Page]:
         """Crawl internal pages breadth-first and return page text."""
 
         queue: deque[str] = deque([self.start_url])
@@ -87,6 +94,8 @@ class Crawler:
 
             text, links = self._parse_html(html)
             pages.append(Page(url=url, text=text))
+            if on_page_crawled is not None:
+                on_page_crawled(len(pages), url)
 
             for link in self._normalise_links(url, links):
                 if link not in seen:
@@ -119,13 +128,19 @@ class Crawler:
         for link in links:
             absolute = self._normalise_url(urljoin(current_url, link))
             parsed = urlparse(absolute)
-            if parsed.scheme in {"http", "https"} and parsed.netloc == self._start_netloc:
+            if (
+                parsed.scheme in {"http", "https"}
+                and parsed.netloc == self._start_netloc
+                and (self.url_filter is None or self.url_filter(absolute))
+            ):
                 normalised.append(absolute)
         return normalised
 
     @staticmethod
     def _normalise_url(url: str) -> str:
         url, _fragment = urldefrag(url)
+        if url.endswith("/page/1/") or url.endswith("/page/1"):
+            return url[: url.rfind("/page/1")].rstrip("/") or url
         return url.rstrip("/") or url
 
     @staticmethod
@@ -138,4 +153,3 @@ class Crawler:
                 "Install dependencies with: pip install -r requirements.txt"
             ) from exc
         return requests.Session()
-

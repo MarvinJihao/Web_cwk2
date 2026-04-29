@@ -1,10 +1,8 @@
-"""Inverted index construction and persistence."""
+"""Inverted index construction."""
 
 from __future__ import annotations
 
-import json
 import re
-from pathlib import Path
 from typing import Iterable
 
 from src.crawler import Page
@@ -59,13 +57,3 @@ class InvertedIndex:
         inverted_index.documents = dict(payload.get("documents", {}))
         inverted_index.index = dict(payload.get("index", {}))
         return inverted_index
-
-    def save(self, path: str | Path) -> None:
-        output_path = Path(path)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(json.dumps(self.to_dict(), indent=2, sort_keys=True), encoding="utf-8")
-
-    @classmethod
-    def load(cls, path: str | Path) -> "InvertedIndex":
-        payload = json.loads(Path(path).read_text(encoding="utf-8"))
-        return cls.from_dict(payload)

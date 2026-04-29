@@ -49,6 +49,29 @@ def test_crawler_collects_internal_pages_and_text():
     assert "Second quote" in pages[1].text
 
 
+def test_crawler_treats_page_one_as_homepage():
+    session = FakeSession(
+        {
+            "https://quotes.toscrape.com": """
+                <html><body>
+                  <p>First quote</p>
+                  <a href="/page/1/">page one</a>
+                </body></html>
+            """,
+        }
+    )
+
+    crawler = Crawler(
+        "https://quotes.toscrape.com/",
+        politeness_delay=0,
+        session=session,
+    )
+
+    pages = crawler.crawl()
+
+    assert [page.url for page in pages] == ["https://quotes.toscrape.com"]
+
+
 def test_crawler_waits_between_successive_requests():
     session = FakeSession(
         {
@@ -69,3 +92,28 @@ def test_crawler_waits_between_successive_requests():
 
     assert sleeps == [6]
 
+
+def test_crawler_can_filter_internal_links():
+    session = FakeSession(
+        {
+            "https://quotes.toscrape.com": """
+                <a href="/page/2/">next</a>
+                <a href="/author/Albert-Einstein/">author</a>
+            """,
+            "https://quotes.toscrape.com/page/2": "Done",
+        }
+    )
+
+    crawler = Crawler(
+        "https://quotes.toscrape.com/",
+        politeness_delay=0,
+        session=session,
+        url_filter=lambda url: "/author/" not in url,
+    )
+
+    pages = crawler.crawl()
+
+    assert [page.url for page in pages] == [
+        "https://quotes.toscrape.com",
+        "https://quotes.toscrape.com/page/2",
+    ]

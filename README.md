@@ -44,11 +44,13 @@ src/
   crawler.py
   indexer.py
   search.py
+  storage.py
   main.py
 tests/
   test_crawler.py
   test_indexer.py
   test_search.py
+  test_storage.py
 data/
   index.json
 requirements.txt

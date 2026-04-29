@@ -5,10 +5,12 @@ from __future__ import annotations
 import json
 import shlex
 from pathlib import Path
+from urllib.parse import urlparse
 
 from src.crawler import Crawler
 from src.indexer import InvertedIndex
 from src.search import SearchEngine
+from src.storage import load_index, save_index
 
 DEFAULT_START_URL = "https://quotes.toscrape.com/"
 DEFAULT_INDEX_PATH = Path("data/index.json")
@@ -70,16 +72,21 @@ class SearchShell:
         return f"Unknown command: {command}"
 
     def _build(self) -> str:
-        crawler = Crawler(self.start_url, politeness_delay=self.politeness_delay)
-        pages = crawler.crawl()
+        crawler = Crawler(
+            self.start_url,
+            politeness_delay=self.politeness_delay,
+            url_filter=self._should_crawl_url,
+        )
+        print("Building index. This waits 6 seconds between page requests...", flush=True)
+        pages = crawler.crawl(on_page_crawled=self._print_crawl_progress)
         index = InvertedIndex()
         index.build(pages)
-        index.save(self.index_path)
+        save_index(index, self.index_path)
         self.index = index
         return f"Built index for {len(pages)} pages and saved it to {self.index_path}"
 
     def _load(self) -> str:
-        self.index = InvertedIndex.load(self.index_path)
+        self.index = load_index(self.index_path)
         return f"Loaded index from {self.index_path}"
 
     def _print(self, args: list[str]) -> str:
@@ -104,6 +111,15 @@ class SearchShell:
         if self.index is None:
             raise RuntimeError("No index loaded. Run build or load first.")
         return SearchEngine(self.index)
+
+    @staticmethod
+    def _should_crawl_url(url: str) -> bool:
+        path = urlparse(url).path
+        return path in {"", "/"} or path.startswith("/page/")
+
+    @staticmethod
+    def _print_crawl_progress(page_count: int, url: str) -> None:
+        print(f"Crawled {page_count}: {url}", flush=True)
 
 
 def main() -> None:
